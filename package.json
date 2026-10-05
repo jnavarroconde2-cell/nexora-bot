@@ -1,0 +1,14 @@
+{
+  "name": "nexora-bot",
+  "version": "1.0.0",
+  "description": "Bot personal de WhatsApp con Baileys",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "pino": "latest"
+  }
+}
