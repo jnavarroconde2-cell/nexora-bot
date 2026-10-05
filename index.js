@@ -6,6 +6,7 @@ import pino from "pino";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
+import readline from "readline";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,21 +22,51 @@ async function cargarPlugins() {
 
   for (const archivo of archivos) {
     const ruta = path.join(carpeta, archivo);
-    const modulo = await import(pathToFileURL(ruta));
 
-    if (modulo.default?.command && modulo.default?.execute) {
-      plugins.set(
-        modulo.default.command,
-        modulo.default
-      );
+    try {
+      const modulo = await import(pathToFileURL(ruta));
 
-      console.log(`✅ Plugin cargado: #${modulo.default.command}`);
+      if (modulo.default?.command && modulo.default?.execute) {
+        plugins.set(
+          modulo.default.command,
+          modulo.default
+        );
+
+        console.log(`✅ Plugin cargado: #${modulo.default.command}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error cargando ${archivo}:`, error);
     }
   }
 }
 
+function preguntar(texto) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise(resolve => {
+    rl.question(texto, respuesta => {
+      rl.close();
+      resolve(respuesta.trim());
+    });
+  });
+}
+
 async function iniciarBot() {
+  console.log("");
+  console.log("╭────────────────────────╮");
+  console.log("│      NEXORA BOT        │");
+  console.log("│    INICIANDO... 🚀     │");
+  console.log("╰────────────────────────╯");
+  console.log("");
+
   await cargarPlugins();
+
+  console.log("");
+  console.log(`📦 Plugins cargados: ${plugins.size}`);
+  console.log("");
 
   const { state, saveCreds } =
     await useMultiFileAuthState("./session");
@@ -48,7 +79,46 @@ async function iniciarBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", ({ connection }) => {
+  // Código de vinculación
+  if (!state.creds.registered) {
+    try {
+      const numero = await preguntar(
+        "📱 Escribe tu número con código de país (ejemplo: 51987654321): "
+      );
+
+      if (!numero) {
+        console.log("❌ No se recibió ningún número.");
+        process.exit(1);
+      }
+
+      const codigo = await sock.requestPairingCode(numero);
+
+      const codigoFormateado =
+        codigo.length === 8
+          ? `${codigo.slice(0, 4)}-${codigo.slice(4)}`
+          : codigo;
+
+      console.log("");
+      console.log("╭────────────────────────────╮");
+      console.log("│       NEXORA BOT           │");
+      console.log("│                            │");
+      console.log("│    TU CÓDIGO ES:           │");
+      console.log(`│       ${codigoFormateado}           │`);
+      console.log("│                            │");
+      console.log("╰────────────────────────────╯");
+      console.log("");
+      console.log("📲 Abre WhatsApp en tu teléfono.");
+      console.log("➡️ Dispositivos vinculados");
+      console.log("➡️ Vincular dispositivo");
+      console.log("➡️ Vincular con número de teléfono");
+      console.log("➡️ Introduce el código mostrado arriba.");
+      console.log("");
+    } catch (error) {
+      console.error("❌ No se pudo generar el código:", error);
+    }
+  }
+
+  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
     if (connection === "open") {
       console.log("");
       console.log("╭────────────────────╮");
@@ -59,7 +129,10 @@ async function iniciarBot() {
     }
 
     if (connection === "close") {
+      console.log("");
       console.log("❌ Conexión cerrada.");
+      console.log("🔄 Reinicia el bot para volver a conectarlo.");
+      console.log("");
     }
   });
 
@@ -84,12 +157,20 @@ async function iniciarBot() {
     const comando = partes.shift()?.toLowerCase();
     const args = partes;
 
+    if (!comando) return;
+
     const plugin = plugins.get(comando);
 
     if (!plugin) {
-      await sock.sendMessage(msg.key.remoteJid, {
-        text: `❌ No existe el comando #${comando}`
-      });
+      await sock.sendMessage(
+        msg.key.remoteJid,
+        {
+          text: `❌ No existe el comando #${comando}`
+        },
+        {
+          quoted: msg
+        }
+      );
 
       return;
     }
@@ -107,8 +188,20 @@ async function iniciarBot() {
         `❌ Error en #${comando}:`,
         error
       );
+
+      await sock.sendMessage(
+        msg.key.remoteJid,
+        {
+          text: "❌ Ocurrió un error al ejecutar este comando."
+        },
+        {
+          quoted: msg
+        }
+      );
     }
   });
 }
 
-iniciarBot();
+iniciarBot().catch(error => {
+  console.error("❌ Error iniciando NEXORA BOT:", error);
+});
